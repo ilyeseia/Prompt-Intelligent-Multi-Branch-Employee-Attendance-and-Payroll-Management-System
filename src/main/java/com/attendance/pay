@@ -1,0 +1,107 @@
+package com.attendance.payroll.service;
+
+import com.attendance.payroll.entity.Branch;
+import com.attendance.payroll.repository.BranchRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.domain.Page;
+import org.springframework.data.domain.Pageable;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Service layer for Branch management operations
+ */
+@Service
+@Transactional
+public class BranchService {
+
+    @Autowired
+    private BranchRepository branchRepository;
+
+    public Branch createBranch(Branch branch) {
+        // Validate unique branch ID
+        if (branchRepository.existsByBranchId(branch.getBranchId())) {
+            throw new RuntimeException("Branch ID already exists: " + branch.getBranchId());
+        }
+
+        // Validate unique branch name
+        if (branchRepository.existsByNameAndIsActiveTrue(branch.getName())) {
+            throw new RuntimeException("Branch name already exists: " + branch.getName());
+        }
+
+        return branchRepository.save(branch);
+    }
+
+    public Branch updateBranch(Long id, Branch branchDetails) {
+        Branch existingBranch = branchRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Branch not found: " + id));
+
+        // Update fields
+        existingBranch.setName(branchDetails.getName());
+        existingBranch.setLocation(branchDetails.getLocation());
+        existingBranch.setTimezone(branchDetails.getTimezone());
+        existingBranch.setStatus(branchDetails.getStatus());
+        existingBranch.setAddress(branchDetails.getAddress());
+        existingBranch.setPhone(branchDetails.getPhone());
+        existingBranch.setEmail(branchDetails.getEmail());
+        existingBranch.setManagerName(branchDetails.getManagerName());
+        existingBranch.setMaxCapacity(branchDetails.getMaxCapacity());
+        existingBranch.setWorkingHoursStart(branchDetails.getWorkingHoursStart());
+        existingBranch.setWorkingHoursEnd(branchDetails.getWorkingHoursEnd());
+        existingBranch.setZktDevices(branchDetails.getZktDevices());
+
+        return branchRepository.save(existingBranch);
+    }
+
+    public Optional<Branch> getBranchById(Long id) {
+        return branchRepository.findById(id);
+    }
+
+    public Optional<Branch> getBranchByBranchId(String branchId) {
+        return branchRepository.findByBranchIdAndIsActiveTrue(branchId);
+    }
+
+    public List<Branch> getAllActiveBranches() {
+        return branchRepository.findActiveBranches();
+    }
+
+    public List<Branch> getBranchesByStatus(Branch.BranchStatus status) {
+        return branchRepository.findByStatusOrderByName(status);
+    }
+
+    public Page<Branch> searchBranches(String searchTerm, Pageable pageable) {
+        return branchRepository.findBySearchTerm(searchTerm, pageable);
+    }
+
+    public List<Branch> getBranchesByManager(String managerName) {
+        return branchRepository.findByManagerName(managerName);
+    }
+
+    public void deleteBranch(Long id) {
+        Branch branch = branchRepository.findById(id)
+                .orElseThrow(() -> new RuntimeException("Branch not found: " + id));
+        
+        // Soft delete
+        branch.markAsDeleted();
+        branchRepository.save(branch);
+    }
+
+    public Branch updateZktDevices(Long branchId, List<com.attendance.payroll.entity.ZktDevice> devices) {
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new RuntimeException("Branch not found: " + branchId));
+
+        branch.setZktDevices(devices);
+        return branchRepository.save(branch);
+    }
+
+    public void syncBranchData(Long branchId) {
+        Branch branch = branchRepository.findById(branchId)
+                .orElseThrow(() -> new RuntimeException("Branch not found: " + branchId));
+
+        branch.setLastSyncTimestamp(java.time.LocalDateTime.now());
+        branchRepository.save(branch);
+    }
+}

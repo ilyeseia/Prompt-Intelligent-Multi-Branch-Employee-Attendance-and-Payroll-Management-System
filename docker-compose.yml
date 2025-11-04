@@ -1,0 +1,193 @@
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  postgres:
+    image: postgres:15
+    container_name: attendance-postgres
+    environment:
+      POSTGRES_DB: attendance_payroll_db
+      POSTGRES_USER: attendance_user
+      POSTGRES_PASSWORD: attendance_password
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./sql/init.sql:/docker-entrypoint-initdb.d/init.sql
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # Redis Cache
+  redis:
+    image: redis:7-alpine
+    container_name: attendance-redis
+    ports:
+      - "6379:6379"
+    volumes:
+      - redis_data:/data
+    networks:
+      - attendance-network
+    restart: unless-stopped
+    command: redis-server --appendonly yes
+
+  # Kafka Message Broker
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: attendance-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: attendance-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+      - "29092:29092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092,PLAINTEXT_HOST://localhost:29092
+      KAFKA_LISTENER_SECURITY_PROTOCOL_MAP: PLAINTEXT:PLAINTEXT,PLAINTEXT_HOST:PLAINTEXT
+      KAFKA_INTER_BROKER_LISTENER_NAME: PLAINTEXT
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # Keycloak Identity Management
+  keycloak:
+    image: quay.io/keycloak/keycloak:23.0.3
+    container_name: attendance-keycloak
+    depends_on:
+      - postgres
+    environment:
+      KEYCLOAK_ADMIN: admin
+      KEYCLOAK_ADMIN_PASSWORD: admin
+      KC_DB: postgres
+      KC_DB_URL: jdbc:postgresql://postgres:5432/keycloak
+      KC_DB_USERNAME: attendance_user
+      KC_DB_PASSWORD: attendance_password
+      KC_HOSTNAME: localhost
+      KC_HTTP_RELATIVE_PATH: /auth/
+    ports:
+      - "8080:8080"
+    networks:
+      - attendance-network
+    restart: unless-stopped
+    command: start-dev
+
+  # Eureka Service Discovery
+  eureka-server:
+    image: springcloud/eureka
+    container_name: attendance-eureka
+    environment:
+      eureka.client.registerWithEureka: false
+      eureka.client.fetchRegistry: false
+    ports:
+      - "8761:8761"
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # Main Application (Spring Boot)
+  attendance-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: attendance-application
+    depends_on:
+      - postgres
+      - redis
+      - kafka
+      - keycloak
+      - eureka-server
+    environment:
+      SPRING_PROFILES_ACTIVE: docker
+      DB_HOST: postgres
+      DB_PORT: 5432
+      DB_NAME: attendance_payroll_db
+      DB_USERNAME: attendance_user
+      DB_PASSWORD: attendance_password
+      REDIS_HOST: redis
+      REDIS_PORT: 6379
+      KAFKA_SERVERS: kafka:9092
+      KEYCLOAK_ISSUER_URI: http://keycloak:8080/auth/realms/attendance
+      JWT_SECRET: mySecretKey123456789012345678901234567890
+    ports:
+      - "8081:8080"
+    networks:
+      - attendance-network
+    restart: unless-stopped
+    volumes:
+      - ./logs:/app/logs
+
+  # n8n Workflow Automation
+  n8n:
+    image: n8nio/n8n
+    container_name: attendance-n8n
+    environment:
+      N8N_BASIC_AUTH_ACTIVE: "true"
+      N8N_BASIC_AUTH_USER: admin
+      N8N_BASIC_AUTH_PASSWORD: password
+      DB_TYPE: postgresdb
+      DB_POSTGRESDB_HOST: postgres
+      DB_POSTGRESDB_DATABASE: n8n
+      DB_POSTGRESDB_USER: attendance_user
+      DB_POSTGRESDB_PASSWORD: attendance_password
+      WEBHOOK_URL: http://localhost:5678/
+      GENERIC_TIMEZONE: Africa/Algiers
+    ports:
+      - "5678:5678"
+    depends_on:
+      - postgres
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # Prometheus Monitoring
+  prometheus:
+    image: prom/prometheus
+    container_name: attendance-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus_data:/prometheus
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+  # Grafana Dashboard
+  grafana:
+    image: grafana/grafana
+    container_name: attendance-grafana
+    ports:
+      - "3000:3000"
+    environment:
+      GF_SECURITY_ADMIN_PASSWORD: admin
+    volumes:
+      - grafana_data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - attendance-network
+    restart: unless-stopped
+
+volumes:
+  postgres_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
+
+networks:
+  attendance-network:
+    driver: bridge
