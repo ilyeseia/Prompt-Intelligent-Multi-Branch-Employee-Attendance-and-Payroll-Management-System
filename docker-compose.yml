@@ -1,6 +1,6 @@
 # ============================================
-# Docker Compose for PayrollPro Production
-# Full Stack: Frontend + Backend + Database
+# Docker Compose for PayrollPro Full Stack
+# Production-Ready Multi-Service Deployment
 # ============================================
 
 version: '3.8'
@@ -55,15 +55,19 @@ services:
       - "8080:8080"
     environment:
       - SPRING_PROFILES_ACTIVE=prod
-      - SPRING_DATASOURCE_URL=jdbc:postgresql://db:5432/payrollpro
+      - SPRING_DATASOURCE_URL=jdbc:postgresql://postgres:5432/payrollpro
       - SPRING_DATASOURCE_USERNAME=payrolladmin
       - SPRING_DATASOURCE_PASSWORD=${DB_PASSWORD:-payroll123secure}
       - SPRING_JPA_HIBERNATE_DDL_AUTO=validate
+      - SPRING_REDIS_HOST=redis
+      - SPRING_REDIS_PORT=6379
       - JAVA_OPTS=-Xms512m -Xmx1024m -XX:+UseG1GC
     networks:
       - payrollpro-network
     depends_on:
-      db:
+      postgres:
+        condition: service_healthy
+      redis:
         condition: service_healthy
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/actuator/health"]
@@ -83,9 +87,9 @@ services:
   # ==========================================
   # Database Service (PostgreSQL)
   # ==========================================
-  db:
+  postgres:
     image: postgres:16-alpine
-    container_name: payrollpro-db
+    container_name: payrollpro-postgres
     restart: unless-stopped
     ports:
       - "5432:5432"
@@ -115,7 +119,7 @@ services:
           memory: 256M
 
   # ==========================================
-  # Redis Cache (Optional - for sessions)
+  # Redis Cache
   # ==========================================
   redis:
     image: redis:7-alpine
@@ -138,6 +142,40 @@ services:
         limits:
           cpus: '0.5'
           memory: 256M
+
+  # ==========================================
+  # Kafka Message Broker (Optional)
+  # ==========================================
+  zookeeper:
+    image: confluentinc/cp-zookeeper:7.4.0
+    container_name: payrollpro-zookeeper
+    environment:
+      ZOOKEEPER_CLIENT_PORT: 2181
+      ZOOKEEPER_TICK_TIME: 2000
+    networks:
+      - payrollpro-network
+    profiles:
+      - kafka
+    restart: unless-stopped
+
+  kafka:
+    image: confluentinc/cp-kafka:7.4.0
+    container_name: payrollpro-kafka
+    depends_on:
+      - zookeeper
+    ports:
+      - "9092:9092"
+    environment:
+      KAFKA_BROKER_ID: 1
+      KAFKA_ZOOKEEPER_CONNECT: zookeeper:2181
+      KAFKA_ADVERTISED_LISTENERS: PLAINTEXT://localhost:9092
+      KAFKA_OFFSETS_TOPIC_REPLICATION_FACTOR: 1
+      KAFKA_AUTO_CREATE_TOPICS_ENABLE: "true"
+    networks:
+      - payrollpro-network
+    profiles:
+      - kafka
+    restart: unless-stopped
 
   # ==========================================
   # Nginx Reverse Proxy
@@ -169,6 +207,44 @@ services:
           cpus: '0.5'
           memory: 128M
 
+  # ==========================================
+  # Prometheus Monitoring (Optional)
+  # ==========================================
+  prometheus:
+    image: prom/prometheus
+    container_name: payrollpro-prometheus
+    ports:
+      - "9090:9090"
+    volumes:
+      - ./monitoring/prometheus.yml:/etc/prometheus/prometheus.yml
+      - prometheus-data:/prometheus
+    networks:
+      - payrollpro-network
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
+  # ==========================================
+  # Grafana Dashboard (Optional)
+  # ==========================================
+  grafana:
+    image: grafana/grafana
+    container_name: payrollpro-grafana
+    ports:
+      - "3001:3000"
+    environment:
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+    volumes:
+      - grafana-data:/var/lib/grafana
+      - ./monitoring/grafana:/etc/grafana/provisioning
+    depends_on:
+      - prometheus
+    networks:
+      - payrollpro-network
+    profiles:
+      - monitoring
+    restart: unless-stopped
+
 # ==========================================
 # Networks
 # ==========================================
@@ -186,4 +262,8 @@ volumes:
   postgres-data:
     driver: local
   redis-data:
+    driver: local
+  prometheus-data:
+    driver: local
+  grafana-data:
     driver: local

@@ -1,0 +1,215 @@
+package com.attendance.payroll.service;
+
+import com.attendance.payroll.entity.Attendance;
+import com.attendance.payroll.entity.Employee;
+import com.attendance.payroll.repository.AttendanceRepository;
+import com.attendance.payroll.repository.EmployeeRepository;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
+
+import java.time.LocalDate;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+
+/**
+ * Service layer for Attendance management operations
+ */
+@Service
+@Transactional
+public class AttendanceService {
+
+    @Autowired
+    private AttendanceRepository attendanceRepository;
+
+    @Autowired
+    private EmployeeRepository employeeRepository;
+
+    public Attendance checkIn(String employeeId, String deviceId) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+
+        LocalDate today = LocalDate.now();
+        
+        // Check if attendance record already exists for today
+        Optional<Attendance> existingAttendance = attendanceRepository
+                .findByEmployeeIdAndAttendanceDate(employee.getId(), today);
+        
+        if (existingAttendance.isPresent()) {
+            Attendance attendance = existingAttendance.get();
+            if (attendance.getCheckInTime() != null) {
+                throw new RuntimeException("Employee already checked in today");
+            }
+            
+            // Complete check-in
+            attendance.setCheckInTime(LocalDateTime.now());
+            attendance.setCheckInDeviceId(deviceId);
+            
+            // Calculate late arrival
+            calculateLateArrival(attendance, employee);
+            
+            return attendanceRepository.save(attendance);
+        } else {
+            // Create new attendance record
+            Attendance attendance = new Attendance();
+            attendance.setEmployee(employee);
+            attendance.setBranch(employee.getBranch());
+            attendance.setAttendanceDate(today);
+            attendance.setCheckInTime(LocalDateTime.now());
+            attendance.setCheckInDeviceId(deviceId);
+            attendance.setStatus(Attendance.AttendanceStatus.PRESENT);
+            
+            // Calculate late arrival
+            calculateLateArrival(attendance, employee);
+            
+            return attendanceRepository.save(attendance);
+        }
+    }
+
+    public Attendance checkOut(String employeeId, String deviceId) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+
+        LocalDate today = LocalDate.now();
+        
+        Attendance attendance = attendanceRepository
+                .findByEmployeeIdAndAttendanceDate(employee.getId(), today)
+                .orElseThrow(() -> new RuntimeException("No attendance record found for today"));
+
+        if (attendance.getCheckOutTime() != null) {
+            throw new RuntimeException("Employee already checked out today");
+        }
+
+        if (attendance.getCheckInTime() == null) {
+            throw new RuntimeException("Employee must check in first");
+        }
+
+        attendance.setCheckOutTime(LocalDateTime.now());
+        attendance.setCheckOutDeviceId(deviceId);
+
+        // Calculate working hours and early departure
+        calculateWorkingHours(attendance, employee);
+        calculateEarlyDeparture(attendance, employee);
+
+        return attendanceRepository.save(attendance);
+    }
+
+    public Attendance createManualAttendance(String employeeId, LocalDate date, 
+                                           LocalDateTime checkIn, LocalDateTime checkOut) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+
+        Optional<Attendance> existingAttendance = attendanceRepository
+                .findByEmployeeIdAndAttendanceDate(employee.getId(), date);
+
+        if (existingAttendance.isPresent()) {
+            throw new RuntimeException("Attendance record already exists for this date");
+        }
+
+        Attendance attendance = new Attendance();
+        attendance.setEmployee(employee);
+        attendance.setBranch(employee.getBranch());
+        attendance.setAttendanceDate(date);
+        attendance.setCheckInTime(checkIn);
+        attendance.setCheckOutTime(checkOut);
+        attendance.setManualOverride(true);
+        attendance.setStatus(Attendance.AttendanceStatus.PRESENT);
+
+        calculateWorkingHours(attendance, employee);
+        
+        return attendanceRepository.save(attendance);
+    }
+
+    public Optional<Attendance> getAttendanceByEmployeeAndDate(String employeeId, LocalDate date) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+        
+        return attendanceRepository.findByEmployeeIdAndAttendanceDate(employee.getId(), date);
+    }
+
+    public List<Attendance> getAttendanceByEmployee(String employeeId, LocalDate startDate, LocalDate endDate) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+        
+        return attendanceRepository.findByEmployeeAndDateRange(employee.getId(), startDate, endDate);
+    }
+
+    public List<Attendance> getAttendanceByBranchAndDate(Long branchId, LocalDate date) {
+        return attendanceRepository.findByBranchAndDate(branchId, date);
+    }
+
+    public List<Attendance> getLateArrivals(LocalDate date, Long branchId) {
+        return attendanceRepository.findLateOrEarlyDepartures(date, branchId);
+    }
+
+    public double getWorkingHoursByEmployee(String employeeId, LocalDate startDate, LocalDate endDate) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+        
+        Double workingHours = attendanceRepository.sumWorkingHoursByEmployee(employee.getId(), startDate, endDate);
+        return workingHours != null ? workingHours : 0.0;
+    }
+
+    public double getOvertimeHoursByEmployee(String employeeId, LocalDate startDate, LocalDate endDate) {
+        Employee employee = employeeRepository.findByEmployeeIdAndIsActiveTrue(employeeId)
+                .orElseThrow(() -> new RuntimeException("Employee not found: " + employeeId));
+        
+        Double overtimeHours = attendanceRepository.sumOvertimeHoursByEmployee(employee.getId(), startDate, endDate);
+        return overtimeHours != null ? overtimeHours : 0.0;
+    }
+
+    private void calculateLateArrival(Attendance attendance, Employee employee) {
+        if (attendance.getCheckInTime() != null) {
+            String scheduledStart = employee.getShiftStartTime();
+            LocalDateTime scheduledTime = LocalDateTime.of(
+                attendance.getAttendanceDate(), 
+                LocalDateTime.parse(scheduledStart).toLocalTime()
+            );
+            
+            if (attendance.getCheckInTime().isAfter(scheduledTime)) {
+                long minutesLate = java.time.Duration.between(scheduledTime, attendance.getCheckInTime()).toMinutes();
+                attendance.setLateArrivalMinutes((int) minutesLate);
+                if (minutesLate > 15) { // 15 minutes tolerance
+                    attendance.setStatus(Attendance.AttendanceStatus.LATE);
+                }
+            }
+        }
+    }
+
+    private void calculateEarlyDeparture(Attendance attendance, Employee employee) {
+        if (attendance.getCheckOutTime() != null) {
+            String scheduledEnd = employee.getShiftEndTime();
+            LocalDateTime scheduledEndTime = LocalDateTime.of(
+                attendance.getAttendanceDate(), 
+                LocalDateTime.parse(scheduledEnd).toLocalTime()
+            );
+            
+            if (attendance.getCheckOutTime().isBefore(scheduledEndTime)) {
+                long minutesEarly = java.time.Duration.between(attendance.getCheckOutTime(), scheduledEndTime).toMinutes();
+                attendance.setEarlyDepartureMinutes((int) minutesEarly);
+            }
+        }
+    }
+
+    private void calculateWorkingHours(Attendance attendance, Employee employee) {
+        if (attendance.getCheckInTime() != null && attendance.getCheckOutTime() != null) {
+            long totalMinutes = java.time.Duration.between(attendance.getCheckInTime(), attendance.getCheckOutTime()).toMinutes();
+            double totalHours = totalMinutes / 60.0;
+            
+            // Subtract break time if tracked
+            if (attendance.getBreakStartTime() != null && attendance.getBreakEndTime() != null) {
+                long breakMinutes = java.time.Duration.between(attendance.getBreakStartTime(), attendance.getBreakEndTime()).toMinutes();
+                totalHours -= breakMinutes / 60.0;
+            }
+            
+            attendance.setTotalWorkingHours(totalHours);
+            
+            // Calculate overtime (assuming standard 8 hours per day)
+            double standardHours = 8.0;
+            if (totalHours > standardHours) {
+                attendance.setOvertimeHours(totalHours - standardHours);
+            }
+        }
+    }
+}

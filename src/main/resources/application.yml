@@ -1,0 +1,178 @@
+server:
+  port: 8080
+  servlet:
+    context-path: /api/v1
+
+spring:
+  application:
+    name: intelligent-attendance-payroll
+  
+  # Database Configuration
+  datasource:
+    url: jdbc:postgresql://postgres:5432/attendance_payroll_db
+    driver-class-name: org.postgresql.Driver
+    username: ${DB_USERNAME:attendance_user}
+    password: ${DB_PASSWORD:attendance_password}
+    hikari:
+      maximum-pool-size: 20
+      minimum-idle: 5
+      idle-timeout: 300000
+      max-lifetime: 1200000
+  
+  # JPA Configuration
+  jpa:
+    hibernate:
+      ddl-auto: update
+    show-sql: false
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.PostgreSQLDialect
+        format_sql: true
+    defer-datasource-initialization: false
+  
+  # Redis Configuration
+  redis:
+    host: ${REDIS_HOST:redis}
+    port: ${REDIS_PORT:6379}
+    password: ${REDIS_PASSWORD:}
+    timeout: 2000ms
+    lettuce:
+      pool:
+        max-active: 8
+        max-wait: -1ms
+        max-idle: 8
+        min-idle: 0
+  
+  # Kafka Configuration
+  kafka:
+    bootstrap-servers: ${KAFKA_SERVERS:kafka:9092}
+    producer:
+      key-serializer: org.apache.kafka.common.serialization.StringSerializer
+      value-serializer: org.springframework.kafka.support.serializer.JsonSerializer
+      acks: all
+      retries: 3
+      batch-size: 16384
+      linger-ms: 10
+    consumer:
+      group-id: attendance-group
+      key-deserializer: org.apache.kafka.common.serialization.StringDeserializer
+      value-deserializer: org.springframework.kafka.support.serializer.JsonDeserializer
+      enable-auto-commit: false
+      auto-offset-reset: latest
+      properties:
+        spring.json.trusted.packages: "com.attendance.payroll.dto,com.attendance.payroll.event"
+  
+  # Cloud Configuration
+  cloud:
+    config:
+      enabled: false
+
+# Eureka Service Discovery
+eureka:
+  client:
+    service-url:
+      defaultZone: http://eureka-server:8761/eureka/
+    fetch-registry: true
+    register-with-eureka: true
+    registry-fetch-interval-seconds: 30
+  instance:
+    hostname: ${HOSTNAME:localhost}
+    prefer-ip-address: true
+
+# Logging Configuration
+logging:
+  level:
+    com.attendance.payroll: INFO
+    org.springframework.security: DEBUG
+    org.springframework.kafka: DEBUG
+  pattern:
+    console: "%d{yyyy-MM-dd HH:mm:ss} - %msg%n"
+    file: "%d{yyyy-MM-dd HH:mm:ss} [%thread] %-5level %logger{36} - %msg%n"
+  file:
+    name: logs/attendance-payroll.log
+
+# Application Specific Configuration
+app:
+  # Timezone
+  timezone: "Africa/Algiers"
+  
+  # Branch Configuration
+  branches:
+    - id: "ALG"
+      name: "Algiers Headquarters"
+      location: "Algiers, Algeria"
+      timezone: "Africa/Algiers"
+    - id: "ORN"
+      name: "Oran Branch"
+      location: "Oran, Algeria"
+      timezone: "Africa/Algiers"
+    - id: "SET"
+      name: "Setif Branch"
+      location: "Setif, Algeria"
+      timezone: "Africa/Algiers"
+    - id: "ANN"
+      name: "Annaba Branch"
+      location: "Annaba, Algeria"
+      timezone: "Africa/Algiers"
+    - id: "TAM"
+      name: "Tamanrasset Branch"
+      location: "Tamanrasset, Algeria"
+      timezone: "Africa/Algiers"
+    - id: "TND"
+      name: "Tindouf Branch"
+      location: "Tindouf, Algeria"
+      timezone: "Africa/Algiers"
+  
+  # ZKTeco Device Configuration
+  zkteco:
+    connection-timeout: 5000
+    read-timeout: 3000
+    retry-attempts: 3
+  
+  # AI Configuration
+  ai:
+    anomaly-threshold: 0.8
+    prediction-window-days: 30
+    learning-rate: 0.001
+  
+  # Payroll Configuration
+  payroll:
+    monthly-processing-day: 25
+    overtime-threshold-hours: 40
+    late-arrival-tolerance-minutes: 15
+    early-departure-tolerance-minutes: 15
+
+# Security Configuration
+security:
+  jwt:
+    secret: ${JWT_SECRET:mySecretKey123456789012345678901234567890}
+    expiration: 86400000 # 24 hours
+    refresh-expiration: 604800000 # 7 days
+  oauth2:
+    client-registration:
+      keycloak:
+        client-id: ${KEYCLOAK_CLIENT_ID:attendance-webapp}
+        client-secret: ${KEYCLOAK_CLIENT_SECRET:}
+        scope: openid,profile,email
+        redirect-uri: "{baseUrl}/login/oauth2/code/{registrationId}"
+    provider:
+      keycloak:
+        issuer-uri: ${KEYCLOAK_ISSUER_URI:http://keycloak:8080/auth/realms/attendance}
+        authorization-uri: ${KEYCLOAK_AUTH_URI:http://keycloak:8080/auth/realms/attendance/protocol/openid-connect/auth}
+        token-uri: ${KEYCLOAK_TOKEN_URI:http://keycloak:8080/auth/realms/attendance/protocol/openid-connect/token}
+        user-info-uri: ${KEYCLOAK_USER_INFO_URI:http://keycloak:8080/auth/realms/attendance/protocol/openid-connect/userinfo}
+        jwk-set-uri: ${KEYCLOAK_JWK_SET_URI:http://keycloak:8080/auth/realms/attendance/protocol/openid-connect/certs}
+
+# Management Endpoints
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info,metrics,prometheus
+  endpoint:
+    health:
+      show-details: when-authorized
+  metrics:
+    export:
+      prometheus:
+        enabled: true
