@@ -12,7 +12,14 @@ import {
   TrendingDown,
   Wallet,
   Building2,
-  Calendar
+  Calendar,
+  Briefcase,
+  ArrowUpRight,
+  ArrowDownRight,
+  Activity,
+  Target,
+  DollarSign,
+  BarChart3
 } from 'lucide-react';
 
 interface StatCardProps {
@@ -23,8 +30,11 @@ interface StatCardProps {
   trend?: {
     value: number;
     isPositive: boolean;
+    label?: string;
   };
-  variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger';
+  variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
+  className?: string;
+  index?: number;
 }
 
 export function StatCard({ 
@@ -33,7 +43,9 @@ export function StatCard({
   description, 
   icon: Icon, 
   trend,
-  variant = 'default' 
+  variant = 'default',
+  className,
+  index = 1
 }: StatCardProps) {
   const variantStyles = {
     default: 'bg-card hover:border-border',
@@ -41,50 +53,74 @@ export function StatCard({
     success: 'bg-emerald-500/5 border-emerald-500/20 hover:border-emerald-500/40',
     warning: 'bg-amber-500/5 border-amber-500/20 hover:border-amber-500/40',
     danger: 'bg-rose-500/5 border-rose-500/20 hover:border-rose-500/40',
+    info: 'bg-blue-500/5 border-blue-500/20 hover:border-blue-500/40',
   };
 
   const iconStyles = {
     default: 'bg-muted text-muted-foreground',
-    primary: 'bg-primary/10 text-primary',
-    success: 'bg-emerald-500/10 text-emerald-500',
-    warning: 'bg-amber-500/10 text-amber-500',
-    danger: 'bg-rose-500/10 text-rose-500',
+    primary: 'bg-primary/15 text-primary',
+    success: 'bg-emerald-500/15 text-emerald-500',
+    warning: 'bg-amber-500/15 text-amber-500',
+    danger: 'bg-rose-500/15 text-rose-500',
+    info: 'bg-blue-500/15 text-blue-500',
   };
 
   return (
     <Card className={cn(
-      'relative overflow-hidden transition-all duration-300 border card-hover animate-fade-in-up',
-      variantStyles[variant]
+      'relative overflow-hidden transition-all duration-300 border card-hover',
+      'animate-fade-in-up',
+      variantStyles[variant],
+      `stagger-${Math.min(index, 8)}`,
+      className
     )}>
-      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2">
+      {/* Decorative gradient */}
+      <div className="absolute top-0 right-0 w-32 h-32 opacity-50 dark:opacity-30">
+        <div className={cn(
+          'absolute top-0 right-0 w-full h-full rounded-full blur-3xl',
+          variant === 'primary' && 'bg-primary/20',
+          variant === 'success' && 'bg-emerald-500/20',
+          variant === 'warning' && 'bg-amber-500/20',
+          variant === 'danger' && 'bg-rose-500/20',
+          variant === 'info' && 'bg-blue-500/20',
+        )} />
+      </div>
+      
+      <CardHeader className="flex flex-row items-center justify-between space-y-0 pb-2 relative">
         <CardTitle className="text-sm font-medium text-muted-foreground">
           {title}
         </CardTitle>
-        <div className={cn('rounded-lg p-2', iconStyles[variant])}>
+        <div className={cn(
+          'rounded-xl p-2.5 transition-transform duration-200 hover:scale-110',
+          iconStyles[variant]
+        )}>
           <Icon className="h-4 w-4" />
         </div>
       </CardHeader>
-      <CardContent>
+      <CardContent className="relative">
         <div className="flex items-end gap-2">
           <div className="text-2xl font-bold tracking-tight">
             {typeof value === 'number' ? value.toLocaleString() : value}
           </div>
           {trend && (
             <div className={cn(
-              'flex items-center gap-1 text-xs font-medium',
-              trend.isPositive ? 'text-emerald-500' : 'text-rose-500'
+              'flex items-center gap-1 text-xs font-medium px-1.5 py-0.5 rounded-md',
+              trend.isPositive 
+                ? 'text-emerald-600 bg-emerald-500/10' 
+                : 'text-rose-600 bg-rose-500/10'
             )}>
               {trend.isPositive ? (
-                <TrendingUp className="h-3 w-3" />
+                <ArrowUpRight className="h-3 w-3" />
               ) : (
-                <TrendingDown className="h-3 w-3" />
+                <ArrowDownRight className="h-3 w-3" />
               )}
               <span>{Math.abs(trend.value)}%</span>
             </div>
           )}
         </div>
-        {description && (
-          <p className="mt-1 text-xs text-muted-foreground">{description}</p>
+        {(description || trend?.label) && (
+          <p className="mt-1.5 text-xs text-muted-foreground">
+            {description || trend?.label}
+          </p>
         )}
       </CardContent>
     </Card>
@@ -97,8 +133,8 @@ interface StatsGridProps {
     value: string | number;
     description?: string;
     icon: React.ElementType;
-    trend?: { value: number; isPositive: boolean };
-    variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger';
+    trend?: { value: number; isPositive: boolean; label?: string };
+    variant?: 'default' | 'primary' | 'success' | 'warning' | 'danger' | 'info';
   }>;
 }
 
@@ -106,23 +142,25 @@ export function StatsGrid({ stats }: StatsGridProps) {
   return (
     <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-4">
       {stats.map((stat, index) => (
-        <div key={stat.title} className={cn(`stagger-${index + 1}`)}>
-          <StatCard {...stat} />
-        </div>
+        <StatCard 
+          key={stat.title} 
+          {...stat} 
+          index={index + 1}
+        />
       ))}
     </div>
   );
 }
 
-// Quick stats for the dashboard
+// Quick stats for the dashboard with enhanced design
 export function DashboardStats() {
   const stats = [
     {
       title: 'Total Employees',
       value: '353',
-      description: 'Across all branches',
+      description: 'Across 6 branches',
       icon: Users,
-      trend: { value: 5.2, isPositive: true },
+      trend: { value: 5.2, isPositive: true, label: 'vs last month' },
       variant: 'primary' as const,
     },
     {
@@ -130,22 +168,22 @@ export function DashboardStats() {
       value: '298',
       description: '84.4% attendance rate',
       icon: UserCheck,
-      trend: { value: 2.1, isPositive: true },
+      trend: { value: 2.1, isPositive: true, label: 'vs yesterday' },
       variant: 'success' as const,
     },
     {
       title: 'On Leave',
       value: '25',
-      description: 'Approved leaves',
+      description: '15 annual, 10 sick',
       icon: Calendar,
       variant: 'warning' as const,
     },
     {
       title: 'Late Arrivals',
       value: '12',
-      description: 'Today so far',
+      description: 'Within grace period',
       icon: Clock,
-      trend: { value: 8.5, isPositive: false },
+      trend: { value: 8.5, isPositive: false, label: 'vs yesterday' },
       variant: 'danger' as const,
     },
   ];
@@ -153,6 +191,7 @@ export function DashboardStats() {
   return <StatsGrid stats={stats} />;
 }
 
+// Payroll specific stats
 export function PayrollStats() {
   const stats = [
     {
@@ -160,13 +199,13 @@ export function PayrollStats() {
       value: '28.5M DZD',
       description: 'Total this month',
       icon: Wallet,
-      trend: { value: 3.2, isPositive: true },
+      trend: { value: 3.2, isPositive: true, label: 'vs last month' },
       variant: 'primary' as const,
     },
     {
       title: 'Pending Approvals',
       value: '15',
-      description: 'Payroll records',
+      description: 'Awaiting review',
       icon: Clock,
       variant: 'warning' as const,
     },
@@ -181,10 +220,90 @@ export function PayrollStats() {
       title: 'Average Hours',
       value: '7.8h',
       description: 'Per day this week',
-      icon: TrendingUp,
-      trend: { value: 1.5, isPositive: true },
+      icon: BarChart3,
+      trend: { value: 1.5, isPositive: true, label: 'vs last week' },
+      variant: 'info' as const,
     },
   ];
 
   return <StatsGrid stats={stats} />;
+}
+
+// HR Stats
+export function HRStats() {
+  const stats = [
+    {
+      title: 'Open Positions',
+      value: '8',
+      description: '3 urgent hiring',
+      icon: Briefcase,
+      trend: { value: 2, isPositive: false, label: 'new positions' },
+      variant: 'primary' as const,
+    },
+    {
+      title: 'New Hires',
+      value: '12',
+      description: 'This month',
+      icon: UserCheck,
+      trend: { value: 15, isPositive: true, label: 'vs last month' },
+      variant: 'success' as const,
+    },
+    {
+      title: 'Training Active',
+      value: '24',
+      description: 'Employees in training',
+      icon: Target,
+      variant: 'info' as const,
+    },
+    {
+      title: 'Turnover Rate',
+      value: '3.2%',
+      description: 'Below target 5%',
+      icon: Activity,
+      trend: { value: 0.5, isPositive: true, label: 'improvement' },
+      variant: 'success' as const,
+    },
+  ];
+
+  return <StatsGrid stats={stats} />;
+}
+
+// Mini stat card for compact displays
+interface MiniStatProps {
+  label: string;
+  value: string | number;
+  icon?: React.ElementType;
+  trend?: {
+    value: number;
+    isPositive: boolean;
+  };
+}
+
+export function MiniStat({ label, value, icon: Icon, trend }: MiniStatProps) {
+  return (
+    <div className="flex items-center gap-3 p-3 rounded-lg bg-muted/30 hover:bg-muted/50 transition-colors">
+      {Icon && (
+        <div className="p-2 rounded-lg bg-primary/10">
+          <Icon className="h-4 w-4 text-primary" />
+        </div>
+      )}
+      <div className="flex-1 min-w-0">
+        <div className="text-xs text-muted-foreground truncate">{label}</div>
+        <div className="text-lg font-semibold">{value}</div>
+      </div>
+      {trend && (
+        <div className={cn(
+          'flex items-center text-xs font-medium',
+          trend.isPositive ? 'text-emerald-500' : 'text-rose-500'
+        )}>
+          {trend.isPositive ? (
+            <TrendingUp className="h-3 w-3 mr-1" />
+          ) : (
+            <TrendingDown className="h-3 w-3 mr-1" />
+          )}
+          {Math.abs(trend.value)}%
+        </div>
+      )}
+    </div>
+  );
 }
