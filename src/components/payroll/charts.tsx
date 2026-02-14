@@ -347,14 +347,19 @@ export const BranchPerformanceChart = memo(function BranchPerformanceChart() {
 
 // Payroll Trend Chart with gradient - memoized
 export const PayrollTrendChart = memo(function PayrollTrendChart() {
-  // Memoize payroll data calculation
+  // Memoize payroll data calculation with deterministic values to avoid hydration mismatch
   const data = useMemo(() => {
     const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    // Use deterministic values based on index to prevent hydration mismatch
+    const payrollValues = [27.2, 26.8, 27.5, 28.1, 27.9, 28.3, 28.0, 27.6, 28.2, 27.8, 28.5];
+    const employeeValues = [342, 345, 348, 352, 350, 353, 351, 349, 352, 350, 353];
+    const salaryValues = [78000, 76500, 79200, 81000, 78500, 82000, 79800, 77500, 81500, 79000, 82500];
+    
     return months.slice(0, 11).map((month, index) => ({
       month,
-      payroll: 26 + Math.random() * 4,
-      employees: 340 + Math.floor(Math.random() * 15),
-      avgSalary: 75000 + Math.floor(Math.random() * 10000),
+      payroll: payrollValues[index],
+      employees: employeeValues[index],
+      avgSalary: salaryValues[index],
     }));
   }, []);
 

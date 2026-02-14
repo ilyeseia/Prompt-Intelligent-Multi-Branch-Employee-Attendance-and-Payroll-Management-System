@@ -404,6 +404,7 @@ export default function DashboardPage() {
           aria-live="polite" 
           aria-atomic="true"
           className="sr-only"
+          suppressHydrationWarning
         >
           Dashboard loaded successfully
         </div>
